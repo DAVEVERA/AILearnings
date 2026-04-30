@@ -190,8 +190,8 @@ export async function analyzeLearnerProfile(
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: prompt,
+    model: "gemini-1.5-flash",
+    contents: prompt, 
     config: {
       responseMimeType: "application/json",
       responseSchema: {
