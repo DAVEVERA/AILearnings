@@ -1,14 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { LearnerProfile, ModuleContent, DifficultyLevel, DEPARTMENTS } from './types';
+import { LearnerProfile, ModuleContent, DifficultyLevel, DEPARTMENTS, UserAccount, BadgeId } from './types';
 import { generateModule } from './services/geminiService';
-import { saveProfile, loadProfile, clearProfile, markModuleComplete } from './services/learnerService';
+import { saveProfileToAccount, getActiveAccount, logout as authLogout } from './services/authService';
+import { markModuleStarted, markModuleComplete } from './services/progressService';
+import { evaluateBadges } from './services/badgeService';
 import { AnimatePresence, motion } from 'motion/react';
 import { Loader2 } from 'lucide-react';
+import AuthFlow from './components/AuthFlow';
 import OnboardingFlow from './components/OnboardingFlow';
 import LearnerDashboard from './components/LearnerDashboard';
 import ModulePlayer from './components/ModulePlayer';
+import AccountPage from './components/AccountPage';
+import BadgeToast from './components/BadgeToast';
 
-type AppView = 'loading' | 'onboarding' | 'dashboard' | 'module';
+type AppView = 'loading' | 'auth' | 'onboarding' | 'dashboard' | 'module' | 'account';
 
 const LOADING_MESSAGES = [
   "AI Engine initialiseren...",
@@ -23,23 +28,27 @@ const LOADING_MESSAGES = [
 
 export default function App() {
   const [view, setView] = useState<AppView>('loading');
+  const [account, setAccount] = useState<UserAccount | null>(null);
   const [profile, setProfile] = useState<LearnerProfile | null>(null);
   const [activeModule, setActiveModule] = useState<ModuleContent | null>(null);
+  const [activeMeta, setActiveMeta] = useState<{ deptId: string; level: DifficultyLevel; index: number } | null>(null);
   const [generating, setGenerating] = useState(false);
   const [loadStep, setLoadStep] = useState(0);
+  const [newBadges, setNewBadges] = useState<BadgeId[]>([]);
 
-  // Check for existing profile on mount
+  // Boot: check for existing session
   useEffect(() => {
-    const saved = loadProfile();
-    if (saved) {
-      setProfile(saved);
-      setView('dashboard');
+    const acc = getActiveAccount();
+    if (acc) {
+      setAccount(acc);
+      setProfile(acc.profile ?? null);
+      setView(acc.profile ? 'dashboard' : 'onboarding');
     } else {
-      setView('onboarding');
+      setView('auth');
     }
   }, []);
 
-  // Animate loading messages while generating
+  // Loading message animation
   useEffect(() => {
     if (!generating) return;
     setLoadStep(0);
@@ -49,21 +58,32 @@ export default function App() {
     return () => clearInterval(iv);
   }, [generating]);
 
+  // ── Handlers ────────────────────────────────────────────────────────────────
+
+  const handleAuthSuccess = (acc: UserAccount) => {
+    setAccount(acc);
+    setProfile(acc.profile ?? null);
+    setView(acc.profile ? 'dashboard' : 'onboarding');
+  };
+
   const handleOnboardingComplete = (newProfile: LearnerProfile) => {
-    saveProfile(newProfile);
+    saveProfileToAccount(newProfile);
     setProfile(newProfile);
     setView('dashboard');
   };
 
-  const handleSelectDept = async (deptId: string, level: DifficultyLevel, index: number) => {
+  const handleSelectModule = async (deptId: string, level: DifficultyLevel, index: number) => {
     if (!profile) return;
     const dept = DEPARTMENTS.find(d => d.id === deptId);
     if (!dept) return;
+    const moduleId = `mod-${deptId}-${level}-${index}`;
 
+    setActiveMeta({ deptId, level, index });
     setGenerating(true);
     setView('module');
     try {
       const mod = await generateModule(dept.name, deptId, level, index, profile);
+      markModuleStarted(moduleId, deptId, level, index);
       setActiveModule(mod);
     } catch (err) {
       console.error('Module generation failed:', err);
@@ -74,24 +94,40 @@ export default function App() {
     }
   };
 
-  const handleModuleComplete = (score: number, maxScore: number) => {
-    if (activeModule) {
-      markModuleComplete(activeModule.id, score, maxScore);
+  const handleModuleComplete = (score: number, maxScore: number, timeSeconds: number, answers: number[]) => {
+    if (activeModule && activeMeta) {
+      markModuleComplete(
+        activeModule.id,
+        activeMeta.deptId,
+        activeMeta.level,
+        activeMeta.index,
+        score,
+        maxScore,
+        timeSeconds,
+        answers
+      );
+      // Evaluate badges
+      const earned = evaluateBadges();
+      if (earned.length > 0) setNewBadges(earned);
     }
     setActiveModule(null);
+    setActiveMeta(null);
     setView('dashboard');
   };
 
   const handleLogout = () => {
-    if (confirm('Profiel resetten? Je voortgang blijft bewaard, maar je doorloopt de intake opnieuw.')) {
-      clearProfile();
-      setProfile(null);
-      setActiveModule(null);
-      setView('onboarding');
-    }
+    authLogout();
+    setAccount(null);
+    setProfile(null);
+    setActiveModule(null);
+    setView('auth');
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  const handleAccountUpdated = (updated: UserAccount) => {
+    setAccount(updated);
+  };
+
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   if (view === 'loading') {
     return (
@@ -101,64 +137,85 @@ export default function App() {
     );
   }
 
-  if (view === 'onboarding') {
-    return <OnboardingFlow onComplete={handleOnboardingComplete} />;
-  }
-
-  if (view === 'module') {
-    if (generating || !activeModule) {
-      return (
-        <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center px-6 text-center">
-          <div className="space-y-10 max-w-sm w-full">
-            <div className="relative">
-              <div className="absolute inset-0 bg-[--accent]/10 blur-3xl rounded-full animate-pulse" />
-              <div className="relative z-10 w-20 h-20 border-4 border-[--border] border-t-[--accent] rounded-full animate-spin mx-auto" />
-            </div>
-            <div className="space-y-4">
-              <h3 className="text-xs font-bold text-[--ink] uppercase tracking-[0.2em]">Module wordt gegenereerd</h3>
-              <AnimatePresence mode="wait">
-                <motion.p
-                  key={loadStep}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  className="text-xs text-[--ink-muted] uppercase tracking-widest h-4"
-                >
-                  {LOADING_MESSAGES[loadStep]}
-                </motion.p>
-              </AnimatePresence>
-              <div className="w-full h-1 bg-[--border] rounded-full overflow-hidden">
-                <motion.div
-                  initial={{ width: '0%' }}
-                  animate={{ width: `${((loadStep + 1) / LOADING_MESSAGES.length) * 100}%` }}
-                  className="h-full bg-[--accent] rounded-full"
-                />
-              </div>
-              <p className="text-[10px] text-[--ink-muted] uppercase tracking-widest">
-                {Math.round(((loadStep + 1) / LOADING_MESSAGES.length) * 100)}% voltooid
-              </p>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <ModulePlayer
-        module={activeModule}
-        onClose={() => { setActiveModule(null); setView('dashboard'); }}
-        onUpdateModule={setActiveModule}
-        onComplete={handleModuleComplete}
-      />
-    );
-  }
-
-  // Dashboard view
   return (
-    <LearnerDashboard
-      profile={profile!}
-      onSelectDept={handleSelectDept}
-      onLogout={handleLogout}
-    />
+    <>
+      {/* Badge toast overlay */}
+      {newBadges.length > 0 && (
+        <BadgeToast newBadges={newBadges} onDismiss={() => setNewBadges([])} />
+      )}
+
+      {view === 'auth' && <AuthFlow onSuccess={handleAuthSuccess} />}
+
+      {view === 'onboarding' && account && (
+        <OnboardingFlow onComplete={handleOnboardingComplete} />
+      )}
+
+      {view === 'account' && account && (
+        <AccountPage
+          account={account}
+          profile={profile}
+          onBack={() => setView('dashboard')}
+          onLogout={handleLogout}
+          onAccountUpdated={handleAccountUpdated}
+        />
+      )}
+
+      {view === 'module' && (
+        <>
+          {(generating || !activeModule) ? (
+            <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center px-6 text-center">
+              <div className="space-y-10 max-w-sm w-full">
+                <div className="relative">
+                  <div className="absolute inset-0 bg-[--accent]/10 blur-3xl rounded-full animate-pulse" />
+                  <div className="relative z-10 w-20 h-20 border-4 border-[--border] border-t-[--accent] rounded-full animate-spin mx-auto" />
+                </div>
+                <div className="space-y-4">
+                  <h3 className="text-xs font-bold text-[--ink] uppercase tracking-[0.2em]">Module wordt gegenereerd</h3>
+                  <AnimatePresence mode="wait">
+                    <motion.p
+                      key={loadStep}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      className="text-xs text-[--ink-muted] uppercase tracking-widest h-4"
+                    >
+                      {LOADING_MESSAGES[loadStep]}
+                    </motion.p>
+                  </AnimatePresence>
+                  <div className="w-full h-1 bg-[--border] rounded-full overflow-hidden">
+                    <motion.div
+                      initial={{ width: '0%' }}
+                      animate={{ width: `${((loadStep + 1) / LOADING_MESSAGES.length) * 100}%` }}
+                      className="h-full bg-[--accent] rounded-full"
+                    />
+                  </div>
+                  <p className="text-[10px] text-[--ink-muted] uppercase tracking-widest">
+                    {Math.round(((loadStep + 1) / LOADING_MESSAGES.length) * 100)}% voltooid
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <ModulePlayer
+              module={activeModule}
+              onClose={() => { setActiveModule(null); setView('dashboard'); }}
+              onUpdateModule={setActiveModule}
+              onComplete={handleModuleComplete}
+            />
+          )}
+        </>
+      )}
+
+      {view === 'dashboard' && account && (
+        <LearnerDashboard
+          profile={profile}
+          account={account}
+          onSelectModule={handleSelectModule}
+          onGoToAccount={() => setView('account')}
+          onLogout={handleLogout}
+          onCompleteOnboarding={() => setView('onboarding')}
+        />
+      )}
+    </>
   );
 }

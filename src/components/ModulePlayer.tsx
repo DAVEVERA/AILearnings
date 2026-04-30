@@ -16,7 +16,7 @@ interface ModulePlayerProps {
   module: ModuleContent;
   onClose: () => void;
   onUpdateModule: (module: ModuleContent) => void;
-  onComplete?: (score: number, maxScore: number) => void;
+  onComplete?: (score: number, maxScore: number, timeSeconds: number, answers: number[]) => void;
 }
 
 export default function ModulePlayer({ module, onClose, onUpdateModule, onComplete }: ModulePlayerProps) {
@@ -197,9 +197,8 @@ export default function ModulePlayer({ module, onClose, onUpdateModule, onComple
               <div className="max-w-5xl mx-auto py-12">
                 <AssessmentView 
                   questions={module.assessment} 
-                  onComplete={(score, max) => {
-                    if (onComplete) onComplete(score, max);
-                    else setCurrentStep('summary');
+                  onComplete={(score, max, time, ans) => {
+                    if (onComplete) onComplete(score, max, time, ans);
                     setCurrentStep('summary');
                   }} 
                 />

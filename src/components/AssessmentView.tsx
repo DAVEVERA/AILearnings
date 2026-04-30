@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { AssessmentQuestion } from '../types';
-import { Check, X, AlertCircle, ChevronRight, HelpCircle, Info } from 'lucide-react';
+import { Check, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
 interface AssessmentViewProps {
   questions: AssessmentQuestion[];
-  onComplete: (score: number, maxScore: number) => void;
+  onComplete: (score: number, maxScore: number, timeSeconds: number, answers: number[]) => void;
 }
 
 export default function AssessmentView({ questions, onComplete }: AssessmentViewProps) {
@@ -14,6 +14,8 @@ export default function AssessmentView({ questions, onComplete }: AssessmentView
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [isAnswered, setIsAnswered] = useState(false);
   const [score, setScore] = useState(0);
+  const [answers, setAnswers] = useState<number[]>([]);
+  const startTime = useRef(Date.now());
 
   const currentQuestion = questions[currentIndex];
 
@@ -30,15 +32,19 @@ export default function AssessmentView({ questions, onComplete }: AssessmentView
     }
   };
 
-  const finalScore = selectedOption === currentQuestion?.correctAnswerIndex ? score + 1 : score;
+  const isLastCorrect = selectedOption === currentQuestion?.correctAnswerIndex;
+  const finalScore = isLastCorrect ? score + 1 : score;
 
   const handleNext = () => {
+    const updatedAnswers = [...answers, selectedOption ?? -1];
     if (currentIndex < questions.length - 1) {
+      setAnswers(updatedAnswers);
       setCurrentIndex(prev => prev + 1);
       setSelectedOption(null);
       setIsAnswered(false);
     } else {
-      onComplete(finalScore, questions.length);
+      const elapsed = Math.round((Date.now() - startTime.current) / 1000);
+      onComplete(finalScore, questions.length, elapsed, updatedAnswers);
     }
   };
 

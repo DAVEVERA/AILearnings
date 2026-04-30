@@ -58,14 +58,26 @@ export const DEPARTMENTS: Department[] = [
 
 export const LEVELS: DifficultyLevel[] = ['beginner', 'gemiddeld', 'gevorderd'];
 
+// ─── Account System ───────────────────────────────────────────────────────────
+
+export interface UserAccount {
+  id: string;
+  email: string;
+  passwordHash: string; // simple hash for localStorage
+  name: string;
+  createdAt: string;
+  lastLoginAt: string;
+  profile?: LearnerProfile;
+}
+
 // ─── Learner System ───────────────────────────────────────────────────────────
 
 export interface LearnerProfile {
   id: string;
   name: string;
-  department: string;       // e.g. "Sales"
-  departmentId: string;     // e.g. "sales"
-  role: string;             // e.g. "Account Manager"
+  department: string;
+  departmentId: string;
+  role: string;
   aiExperience: AIExperienceLevel;
   learningStyle: LearningStyle;
   availableTime: SessionTime;
@@ -78,7 +90,7 @@ export interface LearnerProfile {
 
 export interface LearnerAnalysis {
   recommendedLevel: DifficultyLevel;
-  learningPersona: string;        // e.g. "De Strategische Denker"
+  learningPersona: string;
   personaDescription: string;
   strengths: string[];
   focusAreas: string[];
@@ -86,11 +98,58 @@ export interface LearnerAnalysis {
   estimatedPath: string;
 }
 
+// ─── Progress & Tracking ──────────────────────────────────────────────────────
+
 export interface ModuleProgress {
   moduleId: string;
+  departmentId: string;
+  level: DifficultyLevel;
+  moduleIndex: number;
   completed: boolean;
   score?: number;
   maxScore?: number;
+  timeSpentSeconds?: number;
+  startedAt?: string;
   completedAt?: string;
   attempts: number;
+  answers?: number[]; // stored answer indices
+}
+
+// ─── Badge System ─────────────────────────────────────────────────────────────
+
+export type BadgeId =
+  | 'first_module'
+  | 'perfect_score'
+  | 'speed_learner'
+  | 'consistent_5'
+  | 'dept_beginner'
+  | 'dept_intermediate'
+  | 'dept_advanced'
+  | 'all_rounder'
+  | 'marathon'       // 60+ min total
+  | 'early_adopter';
+
+export interface Badge {
+  id: BadgeId;
+  name: string;
+  description: string;
+  icon: string; // emoji
+  earnedAt?: string;
+  earned: boolean;
+}
+
+// ─── Analytics ────────────────────────────────────────────────────────────────
+
+export interface LearnerStats {
+  totalModulesCompleted: number;
+  totalTimeSeconds: number;
+  averageScore: number;
+  bestScore: number;
+  currentStreak: number; // consecutive days
+  totalAttempts: number;
+  modulesByDept: Record<string, number>;
+  modulesByLevel: Record<DifficultyLevel, number>;
+  recentActivity: { date: string; modulesCompleted: number }[];
+  weakAreas: string[];   // dept/level combos with low scores
+  strongAreas: string[]; // dept/level combos with high scores
 }

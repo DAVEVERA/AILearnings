@@ -6,12 +6,12 @@
   --bg: #F8F7F4;
   --surface: #FFFFFF;
   --surface-2: #F0EFE9;
-  --ink: #0A0A0A;
-  --ink-2: #3D3D3D;
-  --ink-muted: #888880;
+  --ink: #000000;
+  --ink-2: #000000;
+  --ink-muted: #000000;
   --accent: #C8913A;
   --accent-light: #F5E6CC;
-  --accent-dark: #A07228;
+  --accent-dark: #000000;
   --border: #E5E3DC;
   --border-strong: #C8C5BB;
   --success: #2D7A4F;

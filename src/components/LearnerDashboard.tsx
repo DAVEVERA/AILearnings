@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import {
   Users, Code, DollarSign, Megaphone, BarChart, Building2, Headset,
-  UserPlus, Key, Wrench, Play, CheckCircle2, Award, LogOut, RotateCcw
+  UserPlus, Key, Wrench, Play, CheckCircle2, LogOut, RotateCcw, User, Flame
 } from 'lucide-react';
-import { LearnerProfile, DEPARTMENTS, LEVELS, DifficultyLevel } from '../types';
-import { getLevelProgress, getTotalCompleted, loadProgress } from '../services/learnerService';
+import { LearnerProfile, DEPARTMENTS, LEVELS, DifficultyLevel, UserAccount } from '../types';
+import { getLevelProgress, getTotalCompleted, computeStats } from '../services/progressService';
+import { loadBadges } from '../services/badgeService';
 import { getCacheStats, clearAllModuleCache } from '../services/cacheService';
 import { cn } from '../lib/utils';
 
@@ -26,9 +27,12 @@ const LEVEL_LABELS: Record<DifficultyLevel, string> = {
 };
 
 interface Props {
-  profile: LearnerProfile;
-  onSelectDept: (deptId: string, level: DifficultyLevel, index: number) => void;
+  profile: LearnerProfile | null;
+  account: UserAccount;
+  onSelectModule: (deptId: string, level: DifficultyLevel, index: number) => void;
+  onGoToAccount: () => void;
   onLogout: () => void;
+  onCompleteOnboarding: () => void;
 }
 
 function ProgressBar({ pct, color }: { pct: number; color: string }) {
@@ -45,12 +49,26 @@ function ProgressBar({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-export default function LearnerDashboard({ profile, onSelectDept, onLogout }: Props) {
+export default function LearnerDashboard({ profile, account, onSelectModule, onGoToAccount, onLogout, onCompleteOnboarding }: Props) {
   const [selectedDept, setSelectedDept] = useState<string | null>(null);
-  const totalCompleted = getTotalCompleted();
+  const stats = computeStats();
+  const badges = loadBadges();
   const { count: cachedCount } = getCacheStats();
-  const recLevel = profile.analysisResult?.recommendedLevel ?? 'beginner';
-  const allProgress = loadProgress();
+  const recLevel = profile?.analysisResult?.recommendedLevel ?? 'beginner';
+  const earnedBadges = badges.filter(b => b.earned);
+  const allProgress = React.useMemo(() => {
+    const { loadProgress } = require('./progressService');
+    return loadProgress();
+  }, []);
+
+  const formatTime = (s: number) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h > 0) return `${h}u ${m}m`;
+    return m > 0 ? `${m} min` : '—';
+  };
+
+  const dept = DEPARTMENTS.find(d => d.id === selectedDept);
 
   const handleClearCache = () => {
     if (confirm('Alle gecachede modules verwijderen? Ze worden opnieuw gegenereerd bij het openen.')) {
@@ -58,104 +76,154 @@ export default function LearnerDashboard({ profile, onSelectDept, onLogout }: Pr
     }
   };
 
-  const dept = DEPARTMENTS.find(d => d.id === selectedDept);
-
   return (
     <div className="min-h-screen bg-[--bg]">
       {/* Header */}
-      <header className="border-b border-[--border] bg-white px-8 py-5 sticky top-0 z-10">
+      <header className="border-b border-[--border] bg-white px-6 py-4 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <span className="font-display text-xl font-bold text-[--ink]">oostendorp</span>
-          <div className="flex items-center gap-6">
-            <span className="text-sm text-[--ink-muted]">
-              {profile.name} · {profile.department}
-            </span>
+          <div className="flex items-center gap-3">
+            {stats.currentStreak > 1 && (
+              <div className="hidden sm:flex items-center gap-1.5 bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-full">
+                <Flame size={12} className="text-orange-500" />
+                <span className="text-xs font-bold text-orange-600">{stats.currentStreak} dagen</span>
+              </div>
+            )}
+            <button onClick={onGoToAccount}
+              className="flex items-center gap-2 px-3 py-2 bg-[--surface-2] rounded-xl hover:bg-[--border] transition-colors">
+              <div className="w-6 h-6 rounded-full bg-[--accent] flex items-center justify-center text-white text-xs font-bold">
+                {account.name.charAt(0).toUpperCase()}
+              </div>
+              <span className="hidden sm:block text-xs font-semibold text-[--ink]">{account.name}</span>
+              <User size={12} className="text-[--ink-muted]" />
+            </button>
             <button onClick={onLogout}
-              className="flex items-center gap-2 text-xs font-semibold text-[--ink-muted] hover:text-[--ink] transition-colors uppercase tracking-widest">
-              <LogOut size={14} /> Reset profiel
+              className="p-2 text-[--ink-muted] hover:text-[--ink] transition-colors" title="Uitloggen">
+              <LogOut size={16} />
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-8 py-12">
+      <main className="max-w-6xl mx-auto px-6 py-10">
         {!selectedDept ? (
-          <div className="space-y-16">
-            {/* Hero greeting */}
+          <div className="space-y-14">
+            {/* Hero */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-end gap-6 justify-between">
-                <div className="space-y-3">
-                  <p className="text-[--ink-muted] text-sm font-medium uppercase tracking-widest">Jouw leertraject</p>
+                <div className="space-y-2">
+                  <p className="text-[--ink-muted] text-xs font-bold uppercase tracking-widest">Jouw leertraject</p>
                   <h1 className="font-display text-4xl font-bold text-[--ink]">
-                    Welkom terug, {profile.name.split(' ')[0]}.
+                    Welkom{stats.totalModulesCompleted > 0 ? ' terug' : ''}, {account.name.split(' ')[0]}.
                   </h1>
-                  {profile.analysisResult && (
-                    <p className="text-[--ink-2] text-lg">
-                      Je profiel:{' '}
-                      <span className="font-bold text-[--accent]">{profile.analysisResult.learningPersona}</span>
-                      {' '}· Aanbevolen start:{' '}
-                      <span className="font-bold capitalize">{recLevel}</span>
+                  {profile?.analysisResult ? (
+                    <p className="text-[--ink-2]">
+                      Je bent een <span className="font-bold text-[--accent]">{profile.analysisResult.learningPersona}</span>
+                      {' '}· Aanbevolen start: <span className="font-bold capitalize">{recLevel}</span>
                     </p>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <p className="text-[--ink-2]">Profiel nog niet ingesteld.</p>
+                      <button onClick={onCompleteOnboarding}
+                        className="text-xs font-bold text-[--accent] hover:underline">
+                        Nu invullen →
+                      </button>
+                    </div>
                   )}
                 </div>
-                <div className="flex gap-6 text-center">
-                  <div className="p-5 bg-white border border-[--border] rounded-2xl min-w-[100px]">
-                    <p className="font-display text-3xl font-bold text-[--accent]">{totalCompleted}</p>
-                    <p className="text-xs text-[--ink-muted] mt-1 uppercase tracking-widest">Afgerond</p>
+
+                <div className="flex gap-4">
+                  <div className="p-5 bg-white border border-[--border] rounded-2xl text-center min-w-[90px]">
+                    <p className="font-display text-3xl font-bold text-[--accent]">{stats.totalModulesCompleted}</p>
+                    <p className="text-[10px] text-[--ink-muted] mt-1 uppercase tracking-widest">Afgerond</p>
                   </div>
-                  <div className="p-5 bg-white border border-[--border] rounded-2xl min-w-[100px]">
-                    <p className="font-display text-3xl font-bold text-[--ink]">{cachedCount}</p>
-                    <p className="text-xs text-[--ink-muted] mt-1 uppercase tracking-widest">In cache</p>
+                  <div className="p-5 bg-white border border-[--border] rounded-2xl text-center min-w-[90px]">
+                    <p className="font-display text-3xl font-bold text-[--ink]">{earnedBadges.length}</p>
+                    <p className="text-[10px] text-[--ink-muted] mt-1 uppercase tracking-widest">Badges</p>
+                  </div>
+                  <div className="p-5 bg-white border border-[--border] rounded-2xl text-center min-w-[90px]">
+                    <p className="font-display text-3xl font-bold text-[--ink]">{stats.averageScore > 0 ? `${stats.averageScore}%` : '—'}</p>
+                    <p className="text-[10px] text-[--ink-muted] mt-1 uppercase tracking-widest">Gem. score</p>
                   </div>
                 </div>
               </div>
 
-              {profile.analysisResult && (
-                <div className="p-6 bg-white border border-[--border] rounded-2xl">
+              {/* Recent badges */}
+              {earnedBadges.length > 0 && (
+                <div className="flex items-center gap-3 flex-wrap">
+                  <p className="text-xs font-bold uppercase tracking-widest text-[--ink-muted]">Verdiende badges:</p>
+                  {earnedBadges.slice(0, 5).map(b => (
+                    <div key={b.id} title={b.name}
+                      className="w-9 h-9 rounded-xl bg-[--accent-light] border border-[--accent] flex items-center justify-center text-lg">
+                      {b.icon}
+                    </div>
+                  ))}
+                  {earnedBadges.length > 5 && (
+                    <button onClick={onGoToAccount} className="text-xs text-[--ink-muted] hover:text-[--ink] transition-colors">
+                      +{earnedBadges.length - 5} meer
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Analyse tip */}
+              {stats.weakAreas.length > 0 && (
+                <div className="p-5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3">
+                  <span className="text-xl">💡</span>
+                  <div>
+                    <p className="text-sm font-bold text-[--ink]">Aandacht nodig</p>
+                    <p className="text-xs text-[--ink-muted] mt-0.5">
+                      Je scoort lager in: {stats.weakAreas.map(a => a.replace('-', ' — ')).join(', ')}.
+                      Overweeg deze modules opnieuw te doen.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {profile?.analysisResult && (
+                <div className="p-5 bg-white border border-[--border] rounded-2xl">
                   <p className="text-xs font-bold uppercase tracking-widest text-[--ink-muted] mb-2">Jouw aanpak</p>
-                  <p className="text-[--ink-2] leading-relaxed">{profile.analysisResult.customizedApproach}</p>
+                  <p className="text-sm text-[--ink-2] leading-relaxed">{profile.analysisResult.customizedApproach}</p>
                 </div>
               )}
             </motion.div>
 
-            {/* Department grid */}
-            <div className="space-y-6">
-              <h2 className="text-xs font-bold uppercase tracking-widest text-[--ink-muted]">Kies een afdeling</h2>
+            {/* Dept grid */}
+            <div className="space-y-5">
+              <p className="text-xs font-bold uppercase tracking-widest text-[--ink-muted]">Kies een afdeling</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {DEPARTMENTS.map((d, idx) => {
                   const Icon = iconMap[d.icon];
-                  const isRecommended = d.id === profile.departmentId;
-                  const begPct = getLevelProgress(d.id, 'beginner', 10).percentage;
+                  const isOwn = d.id === profile?.departmentId;
+                  const begProg = getLevelProgress(d.id, 'beginner', 10);
                   return (
-                    <motion.button
-                      key={d.id}
+                    <motion.button key={d.id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: idx * 0.04 }}
                       onClick={() => setSelectedDept(d.id)}
                       className={cn(
                         'p-6 text-left border-2 rounded-2xl bg-white hover:shadow-lg transition-all group space-y-5',
-                        isRecommended ? 'border-[--accent]' : 'border-[--border] hover:border-[--border-strong]'
-                      )}
-                    >
+                        isOwn ? 'border-[--accent]' : 'border-[--border] hover:border-[--border-strong]'
+                      )}>
                       <div className="flex justify-between items-start">
-                        <div className="w-12 h-12 rounded-xl bg-[--surface-2] flex items-center justify-center group-hover:bg-[--ink] group-hover:text-white transition-all">
-                          <Icon size={22} strokeWidth={1.5} />
+                        <div className="w-11 h-11 rounded-xl bg-[--surface-2] flex items-center justify-center group-hover:bg-[--ink] group-hover:text-white transition-all">
+                          <Icon size={20} strokeWidth={1.5} />
                         </div>
-                        {isRecommended && (
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-[--accent] bg-[--accent-light] px-3 py-1 rounded-full">
+                        {isOwn && (
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-[--accent] bg-[--accent-light] px-2.5 py-1 rounded-full">
                             Jouw afdeling
                           </span>
                         )}
                       </div>
-                      <div className="space-y-1">
-                        <h3 className="font-bold text-[--ink]">{d.name}</h3>
+                      <div className="space-y-0.5">
+                        <p className="font-bold text-sm text-[--ink]">{d.name}</p>
                         <p className="text-xs text-[--ink-muted]">{d.description}</p>
                       </div>
-                      {begPct > 0 && (
+                      {begProg.percentage > 0 && (
                         <div className="space-y-1.5">
-                          <ProgressBar pct={begPct} color={LEVEL_COLORS.beginner} />
-                          <p className="text-xs text-[--ink-muted]">{begPct}% beginner voltooid</p>
+                          <ProgressBar pct={begProg.percentage} color={LEVEL_COLORS.beginner} />
+                          <p className="text-xs text-[--ink-muted]">{begProg.completed}/10 beginner afgerond</p>
                         </div>
                       )}
                     </motion.button>
@@ -166,86 +234,80 @@ export default function LearnerDashboard({ profile, onSelectDept, onLogout }: Pr
 
             <div className="flex justify-end">
               <button onClick={handleClearCache}
-                className="flex items-center gap-2 text-xs text-[--ink-muted] hover:text-[--ink] transition-colors">
-                <RotateCcw size={12} /> Cache wissen ({cachedCount} modules)
+                className="flex items-center gap-1.5 text-xs text-[--ink-muted] hover:text-[--ink] transition-colors">
+                <RotateCcw size={11} /> Cache wissen ({cachedCount})
               </button>
             </div>
           </div>
         ) : (
-          /* Department detail view */
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-12">
+          /* Dept detail */
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-10">
             <div className="flex items-center justify-between border-b border-[--border] pb-8">
-              <div className="space-y-3">
+              <div className="space-y-2">
                 <button onClick={() => setSelectedDept(null)}
-                  className="text-xs font-semibold text-[--ink-muted] hover:text-[--ink] uppercase tracking-widest transition-colors flex items-center gap-2">
-                  ← Terug naar afdelingen
+                  className="text-xs font-bold text-[--ink-muted] hover:text-[--ink] uppercase tracking-widest transition-colors flex items-center gap-1.5">
+                  ← Afdelingen
                 </button>
                 <h2 className="font-display text-3xl font-bold text-[--ink]">{dept?.name}</h2>
-                <p className="text-[--ink-2]">{dept?.description}</p>
+                <p className="text-sm text-[--ink-2]">{dept?.description}</p>
               </div>
             </div>
 
-            <div className="space-y-12">
+            <div className="space-y-14">
               {LEVELS.map(level => {
                 const { completed, percentage } = getLevelProgress(dept?.id ?? '', level, 10);
-                const isRecommended = level === recLevel;
+                const isRec = level === recLevel;
                 return (
                   <section key={level} className="space-y-6">
                     <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
                         <h3 className="text-xs font-bold uppercase tracking-widest text-[--ink-muted]">
-                          {LEVEL_LABELS[level]} Journey
+                          {LEVEL_LABELS[level]}
                         </h3>
-                        {isRecommended && (
+                        {isRec && (
                           <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[--accent-light] text-[--accent-dark]">
                             Aanbevolen
                           </span>
                         )}
                       </div>
                       <div className="flex-1 h-px bg-[--border]" />
-                      <span className="text-xs text-[--ink-muted]">{completed}/10 afgerond</span>
+                      <span className="text-xs text-[--ink-muted]">{completed}/10</span>
                     </div>
-
-                    {percentage > 0 && (
-                      <ProgressBar pct={percentage} color={LEVEL_COLORS[level]} />
-                    )}
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                    {percentage > 0 && <ProgressBar pct={percentage} color={LEVEL_COLORS[level]} />}
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                       {Array.from({ length: 10 }).map((_, i) => {
                         const moduleId = `mod-${dept?.id}-${level}-${i}`;
-                        const prog = allProgress[moduleId];
+                        const { loadProgress } = require('../services/progressService');
+                        const prog = (loadProgress() as any)[moduleId];
                         const done = prog?.completed;
+                        const pct = done && prog.score !== undefined && prog.maxScore
+                          ? Math.round((prog.score / prog.maxScore) * 100) : null;
                         return (
                           <motion.button
                             key={i}
-                            whileHover={{ y: -4 }}
-                            onClick={() => onSelectDept(dept?.id ?? '', level, i)}
+                            whileHover={{ y: -3 }}
+                            onClick={() => onSelectModule(dept?.id ?? '', level, i)}
                             className={cn(
-                              'p-5 text-left rounded-2xl border-2 transition-all group relative overflow-hidden',
-                              done
-                                ? 'border-[--success] bg-white'
-                                : 'border-[--border] bg-white hover:border-[--border-strong] hover:shadow-md'
-                            )}
-                          >
-                            <div className="flex justify-between items-start mb-6">
+                              'p-4 text-left rounded-2xl border-2 transition-all group relative overflow-hidden',
+                              done ? 'border-[--success] bg-white' : 'border-[--border] bg-white hover:border-[--border-strong] hover:shadow-md'
+                            )}>
+                            <div className="flex justify-between items-start mb-5">
                               <span className="text-[10px] font-bold text-white bg-[--ink] px-2 py-0.5 rounded">
                                 #{i + 1}
                               </span>
                               {done
-                                ? <CheckCircle2 size={16} className="text-[--success]" />
-                                : <Play size={14} className="text-[--ink-muted] group-hover:text-[--ink]" fill="currentColor" />
+                                ? <CheckCircle2 size={14} className="text-[--success]" />
+                                : <Play size={12} className="text-[--ink-muted]" fill="currentColor" />
                               }
                             </div>
-                            <p className="text-xs font-semibold text-[--ink] leading-tight">
-                              Module {i + 1}
-                            </p>
-                            {done && prog.score !== undefined && (
-                              <p className="text-[10px] text-[--success] mt-1">
-                                Score: {prog.score}/{prog.maxScore}
+                            <p className="text-xs font-semibold text-[--ink]">Module {i + 1}</p>
+                            {pct !== null && (
+                              <p className={cn('text-[10px] mt-1 font-bold',
+                                pct >= 80 ? 'text-[--success]' : pct >= 60 ? 'text-[--accent]' : 'text-red-500'
+                              )}>
+                                {pct}%
                               </p>
                             )}
-                            <div className="absolute bottom-0 left-0 w-full h-0.5"
-                              style={{ background: done ? LEVEL_COLORS['.success' as any] ?? LEVEL_COLORS[level] : 'transparent' }} />
                           </motion.button>
                         );
                       })}
