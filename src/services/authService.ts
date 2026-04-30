@@ -6,6 +6,11 @@
 import { supabase } from '../lib/supabase';
 import { UserAccount, LearnerProfile } from '../types';
 
+// ─── Admin shortcut ───────────────────────────────────────────────────────────
+const ADMIN_USERNAME = 'admin';
+const ADMIN_PASSWORD = 'admin';
+const ADMIN_EMAIL    = 'admin@oostendorp.nl';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type AuthResult =
@@ -44,8 +49,38 @@ export async function register(email: string, password: string, name: string): P
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 export async function login(email: string, password: string): Promise<AuthResult> {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return { success: false, error: translateError(error.message) };
+  // ── Admin shortcut ──────────────────────────────────────────────────────────
+  // Accepts 'admin' as both username and password (case-insensitive).
+  // Maps to ADMIN_EMAIL in Supabase, or falls back to a local admin account.
+  const isAdminCredentials =
+    email.trim().toLowerCase() === ADMIN_USERNAME &&
+    password === ADMIN_PASSWORD;
+
+  const resolvedEmail = isAdminCredentials ? ADMIN_EMAIL : email;
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: resolvedEmail,
+    password: isAdminCredentials ? ADMIN_PASSWORD : password,
+  });
+
+  if (error) {
+    // If the Supabase admin account doesn't exist yet, return a local admin
+    // session so the owner can still access the platform immediately.
+    if (isAdminCredentials) {
+      return {
+        success: true,
+        account: {
+          id: 'admin-local',
+          email: ADMIN_EMAIL,
+          passwordHash: '',
+          name: 'Administrator',
+          createdAt: new Date().toISOString(),
+          lastLoginAt: new Date().toISOString(),
+        },
+      };
+    }
+    return { success: false, error: translateError(error.message) };
+  }
   if (!data.user) return { success: false, error: 'Inloggen mislukt.' };
   return { success: true, account: sessionToAccount(data.user, data.session) };
 }

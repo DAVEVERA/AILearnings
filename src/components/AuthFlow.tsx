@@ -117,15 +117,18 @@ export default function AuthFlow({ onSuccess }: Props) {
               )}
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-widest text-[--ink-muted]">E-mailadres</label>
+                <label className="text-xs font-bold uppercase tracking-widest text-[--ink-muted]">
+                  Gebruikersnaam / E-mailadres
+                </label>
                 <div className="relative">
                   <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[--ink-muted]" />
                   <input
-                    type="email"
+                    type="text"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
-                    placeholder="naam@oostendorp.nl"
+                    placeholder="admin  of  naam@oostendorp.nl"
                     required
+                    autoComplete="username"
                     className="w-full pl-11 pr-4 py-4 border-2 border-[--border] rounded-xl bg-white focus:outline-none focus:border-[--accent] transition-colors text-sm"
                   />
                 </div>

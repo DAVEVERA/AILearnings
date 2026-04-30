@@ -8,7 +8,7 @@
   --surface-2: #F0EFE9;
   --ink: #000000;
   --ink-2: #000000;
-  --ink-muted: #000000;
+  --ink-muted: #333333;
   --accent: #C8913A;
   --accent-light: #F5E6CC;
   --accent-dark: #000000;
@@ -33,7 +33,7 @@ html {
 body {
   margin: 0;
   background: var(--bg);
-  color: var(--ink);
+  color: #000000;
   font-family: 'DM Sans', sans-serif;
   font-weight: 400;
   line-height: 1.6;
@@ -61,4 +61,51 @@ body {
 @keyframes dash {
   from { stroke-dashoffset: 251; }
   to   { stroke-dashoffset: var(--target-offset); }
+}
+
+/* ─── FORCE ALL TEXT BLACK ────────────────────────────────────────────────── */
+/* Override Tailwind text-gray-* and text-white classes that produce unreadable
+   light text on light backgrounds. White text is ONLY allowed on elements that
+   explicitly have a dark/black background. */
+
+/* Gray shades → black */
+.text-gray-100, .text-gray-200, .text-gray-300,
+.text-gray-400, .text-gray-500, .text-gray-600,
+.text-gray-700, .text-gray-800, .text-gray-900 {
+  color: #000000 !important;
+}
+
+/* White text → black, EXCEPT when the parent has a dark background */
+.text-white {
+  color: #000000 !important;
+}
+
+/* Restore white text inside dark/black backgrounds */
+.bg-black .text-white,
+.bg-gray-800 .text-white,
+.bg-gray-900 .text-white,
+[class*="bg-black"] .text-white,
+[class*="bg-gray-800"] .text-white,
+[class*="bg-gray-900"] .text-white,
+/* Buttons with dark bg */
+button.bg-black,
+button[class*="bg-black"],
+button[class*="bg-gray-8"] {
+  color: #ffffff !important;
+}
+
+/* Slate shades → black */
+.text-slate-100, .text-slate-200, .text-slate-300,
+.text-slate-400, .text-slate-500 {
+  color: #000000 !important;
+}
+
+/* White/60 opacity text used in toasts → dark */
+.text-white\/60 {
+  color: rgba(0,0,0,0.55) !important;
+}
+
+/* Ensure ink variables propagate */
+[class*="text-[--ink"] {
+  color: #000000;
 }
