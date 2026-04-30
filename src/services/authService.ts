@@ -1,59 +1,12 @@
 /**
- * authService.ts
- * localStorage-based account system.
- * Passwords are hashed with a simple djb2-variant (prototype only).
- * For production: use Supabase Auth.
+ * authService.ts — Supabase Auth
+ * Vervangt het oude localStorage-systeem.
+ * Gebruikt Supabase Auth voor veilige registratie, login en sessiebeheer.
  */
+import { supabase } from '../lib/supabase';
 import { UserAccount, LearnerProfile } from '../types';
 
-const ACCOUNTS_KEY = 'ail_accounts';
-const SESSION_KEY = 'ail_session';
-
-// ─── Hashing ──────────────────────────────────────────────────────────────────
-
-function hashPassword(pw: string): string {
-  let h = 5381;
-  for (let i = 0; i < pw.length; i++) {
-    h = ((h << 5) + h) ^ pw.charCodeAt(i);
-  }
-  return (h >>> 0).toString(16);
-}
-
-// ─── Storage helpers ──────────────────────────────────────────────────────────
-
-function loadAccounts(): Record<string, UserAccount> {
-  try {
-    return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) ?? '{}');
-  } catch {
-    return {};
-  }
-}
-
-function saveAccounts(accounts: Record<string, UserAccount>): void {
-  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
-}
-
-// ─── Session ──────────────────────────────────────────────────────────────────
-
-export function getSession(): string | null {
-  return localStorage.getItem(SESSION_KEY);
-}
-
-export function getActiveAccount(): UserAccount | null {
-  const id = getSession();
-  if (!id) return null;
-  return loadAccounts()[id] ?? null;
-}
-
-function setSession(id: string): void {
-  localStorage.setItem(SESSION_KEY, id);
-}
-
-export function logout(): void {
-  localStorage.removeItem(SESSION_KEY);
-}
-
-// ─── Register ─────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type AuthResult =
   | { success: true; account: UserAccount }
@@ -63,86 +16,127 @@ export function isAuthError(r: AuthResult): r is { success: false; error: string
   return !r.success;
 }
 
-export function register(email: string, password: string, name: string): AuthResult {
-  const accounts = loadAccounts();
-  const emailKey = email.toLowerCase().trim();
-  if (accounts[emailKey]) {
-    return { success: false, error: 'Dit e-mailadres is al in gebruik.' };
-  }
-  if (password.length < 6) {
-    return { success: false, error: 'Wachtwoord moet minimaal 6 tekens zijn.' };
-  }
-  const account: UserAccount = {
-    id: emailKey,
-    email: emailKey,
-    passwordHash: hashPassword(password),
-    name: name.trim(),
-    createdAt: new Date().toISOString(),
-    lastLoginAt: new Date().toISOString(),
-  };
-  accounts[emailKey] = account;
-  saveAccounts(accounts);
-  setSession(emailKey);
-  return { success: true, account };
+// ─── Session ──────────────────────────────────────────────────────────────────
+
+export async function getActiveAccount(): Promise<UserAccount | null> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) return null;
+  return sessionToAccount(session.user, session);
+}
+
+export async function logout(): Promise<void> {
+  await supabase.auth.signOut();
+}
+
+// ─── Register ─────────────────────────────────────────────────────────────────
+
+export async function register(email: string, password: string, name: string): Promise<AuthResult> {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { name } },
+  });
+  if (error) return { success: false, error: error.message };
+  if (!data.user) return { success: false, error: 'Registratie mislukt.' };
+  return { success: true, account: sessionToAccount(data.user, data.session) };
 }
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-export function login(email: string, password: string): AuthResult {
-  const accounts = loadAccounts();
-  const emailKey = email.toLowerCase().trim();
-  const account = accounts[emailKey];
-  if (!account) {
-    return { success: false, error: 'Geen account gevonden met dit e-mailadres.' };
-  }
-  if (account.passwordHash !== hashPassword(password)) {
-    return { success: false, error: 'Onjuist wachtwoord.' };
-  }
-  account.lastLoginAt = new Date().toISOString();
-  accounts[emailKey] = account;
-  saveAccounts(accounts);
-  setSession(emailKey);
-  return { success: true, account };
+export async function login(email: string, password: string): Promise<AuthResult> {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) return { success: false, error: translateError(error.message) };
+  if (!data.user) return { success: false, error: 'Inloggen mislukt.' };
+  return { success: true, account: sessionToAccount(data.user, data.session) };
 }
 
-// ─── Profile linking ──────────────────────────────────────────────────────────
+// ─── Profile ─────────────────────────────────────────────────────────────────
 
-export function saveProfileToAccount(profile: LearnerProfile): void {
-  const accounts = loadAccounts();
-  const id = getSession();
-  if (!id || !accounts[id]) return;
-  accounts[id].profile = profile;
-  saveAccounts(accounts);
+export async function saveProfileToAccount(profile: LearnerProfile): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase.from('profiles').upsert({
+    id: user.id,
+    name: profile.name,
+    department: profile.department,
+    department_id: profile.departmentId,
+    role: profile.role,
+    ai_experience: profile.aiExperience,
+    learning_style: profile.learningStyle,
+    available_time: profile.availableTime,
+    current_tools: profile.currentTools,
+    main_challenge: profile.mainChallenge,
+    learning_goal: profile.learningGoal,
+    analysis_result: profile.analysisResult ?? null,
+  });
 }
 
-export function updateAccountName(name: string): void {
-  const accounts = loadAccounts();
-  const id = getSession();
-  if (!id || !accounts[id]) return;
-  accounts[id].name = name;
-  saveAccounts(accounts);
+export async function loadProfile(): Promise<LearnerProfile | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+  if (!data) return null;
+  return {
+    id: data.id,
+    name: data.name,
+    department: data.department,
+    departmentId: data.department_id,
+    role: data.role,
+    aiExperience: data.ai_experience as any,
+    learningStyle: data.learning_style as any,
+    availableTime: data.available_time as any,
+    currentTools: data.current_tools,
+    mainChallenge: data.main_challenge,
+    learningGoal: data.learning_goal,
+    analysisResult: data.analysis_result as any ?? undefined,
+    createdAt: data.created_at,
+  };
 }
 
-export function changePassword(oldPw: string, newPw: string): AuthResult {
-  const accounts = loadAccounts();
-  const id = getSession();
-  if (!id || !accounts[id]) return { success: false, error: 'Niet ingelogd.' };
-  if (accounts[id].passwordHash !== hashPassword(oldPw)) {
-    return { success: false, error: 'Huidig wachtwoord klopt niet.' };
-  }
-  if (newPw.length < 6) {
-    return { success: false, error: 'Nieuw wachtwoord moet minimaal 6 tekens zijn.' };
-  }
-  accounts[id].passwordHash = hashPassword(newPw);
-  saveAccounts(accounts);
-  return { success: true, account: accounts[id] };
+// ─── Account settings ─────────────────────────────────────────────────────────
+
+export async function updateAccountName(name: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase.from('profiles').update({ name }).eq('id', user.id);
+  await supabase.auth.updateUser({ data: { name } });
 }
 
-export function deleteAccount(): void {
-  const accounts = loadAccounts();
-  const id = getSession();
-  if (!id) return;
-  delete accounts[id];
-  saveAccounts(accounts);
-  logout();
+export async function changePassword(oldPw: string, newPw: string): Promise<AuthResult> {
+  // Re-authenticate first (Supabase doesn't have a "verify old password" endpoint in browser)
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.email) return { success: false, error: 'Niet ingelogd.' };
+  const { error: loginErr } = await supabase.auth.signInWithPassword({ email: user.email, password: oldPw });
+  if (loginErr) return { success: false, error: 'Huidig wachtwoord klopt niet.' };
+  if (newPw.length < 6) return { success: false, error: 'Nieuw wachtwoord moet minimaal 6 tekens zijn.' };
+  const { error } = await supabase.auth.updateUser({ password: newPw });
+  if (error) return { success: false, error: error.message };
+  return { success: true, account: await getActiveAccount() as UserAccount };
+}
+
+export async function deleteAccount(): Promise<void> {
+  // Note: Supabase doesn't allow client-side user deletion without admin key.
+  // For now we clear local data and sign out.
+  // In production: call a Supabase Edge Function that uses the service role to delete.
+  await supabase.auth.signOut();
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function sessionToAccount(user: any, session: any): UserAccount {
+  return {
+    id: user.id,
+    email: user.email ?? '',
+    passwordHash: '',           // not stored — managed by Supabase Auth
+    name: user.user_metadata?.name ?? user.email?.split('@')[0] ?? 'Gebruiker',
+    createdAt: user.created_at ?? new Date().toISOString(),
+    lastLoginAt: session?.access_token ? new Date().toISOString() : user.created_at,
+  };
+}
+
+function translateError(msg: string): string {
+  if (msg.includes('Invalid login')) return 'Onjuist e-mailadres of wachtwoord.';
+  if (msg.includes('Email not confirmed')) return 'Bevestig eerst je e-mailadres.';
+  if (msg.includes('already registered')) return 'Dit e-mailadres is al in gebruik.';
+  return msg;
 }
