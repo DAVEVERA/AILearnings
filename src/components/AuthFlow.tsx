@@ -144,6 +144,7 @@ export default function AuthFlow({ onSuccess }: Props) {
                     onChange={e => setPassword(e.target.value)}
                     placeholder={mode === 'register' ? 'Minimaal 6 tekens' : '••••••••'}
                     required
+                    autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
                     className="w-full pl-11 pr-12 py-4 border-2 border-[--border] rounded-xl bg-white focus:outline-none focus:border-[--accent] transition-colors text-sm"
                   />
                   <button type="button" onClick={() => setShowPw(s => !s)}
