@@ -3,7 +3,10 @@ import { ModuleContent, DifficultyLevel, LearnerProfile, LearnerAnalysis } from 
 import { AI_CURRICULUM } from "../curriculum";
 import { getCachedModule, setCachedModule, buildModuleCacheKey } from "./cacheService";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+if (!apiKey) throw new Error('VITE_GEMINI_API_KEY ontbreekt in .env');
+const ai = new GoogleGenAI({ apiKey });
+
 
 // ─── Shared JSON Schema ───────────────────────────────────────────────────────
 
