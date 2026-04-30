@@ -1,0 +1,64 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+
+@import "tailwindcss";
+
+:root {
+  --bg: #F8F7F4;
+  --surface: #FFFFFF;
+  --surface-2: #F0EFE9;
+  --ink: #0A0A0A;
+  --ink-2: #3D3D3D;
+  --ink-muted: #888880;
+  --accent: #C8913A;
+  --accent-light: #F5E6CC;
+  --accent-dark: #A07228;
+  --border: #E5E3DC;
+  --border-strong: #C8C5BB;
+  --success: #2D7A4F;
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 40px;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.font-display {
+  font-family: 'Playfair Display', serif;
+}
+
+/* Scrollbar */
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
+
+/* Accent line decoration */
+.accent-line {
+  display: inline-block;
+  width: 40px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* Progress ring animation */
+@keyframes dash {
+  from { stroke-dashoffset: 251; }
+  to   { stroke-dashoffset: var(--target-offset); }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "AutoModule E-Learning Generator",
+  "description": "An automated tool to generate structured, interactive e-learning modules across different departments and difficulty levels using Gemini AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
