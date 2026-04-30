@@ -45,13 +45,12 @@ function ActivityHeatmap() {
       <p className="text-xs font-bold uppercase tracking-widest text-[--ink-muted]">Activiteit — afgelopen 4 weken</p>
       <div className="flex gap-1.5">
         {days.map(({ key, count, day }) => (
-          <div key={key} title={`${key}: ${count} modules`}
-            className="flex-1 h-8 rounded-md transition-all"
-            style={{
-              background: count === 0
-                ? 'var(--surface-2)'
-                : `rgba(200, 145, 58, ${0.2 + (count / max) * 0.8})`
-            }}
+          <div
+            key={key}
+            title={`${key}: ${count} modules`}
+            className="flex-1 h-8 rounded-md transition-all [background:var(--bar-bg)]"
+            /* eslint-disable-next-line react/forbid-component-props */
+            style={{ ['--bar-bg' as string]: count === 0 ? 'var(--surface-2)' : `rgba(200,145,58,${(0.2 + (count / max) * 0.8).toFixed(2)})` } as React.CSSProperties}
           />
         ))}
       </div>
@@ -71,12 +70,14 @@ function WeekChart({ data }: { data: { date: string; modulesCompleted: number }[
       <div className="flex gap-2 items-end h-20">
         {data.map((d, i) => (
           <div key={d.date} className="flex-1 flex flex-col items-center gap-1">
-            <div className="w-full rounded-t-md transition-all"
+            <div
+              className="w-full rounded-t-md transition-all [height:var(--bar-h)] [min-height:var(--bar-min)] [background:var(--bar-bg)]"
+              /* eslint-disable-next-line react/forbid-component-props */
               style={{
-                height: `${(d.modulesCompleted / max) * 64}px`,
-                minHeight: d.modulesCompleted > 0 ? 4 : 0,
-                background: d.modulesCompleted > 0 ? 'var(--accent)' : 'var(--surface-2)'
-              }} />
+                ['--bar-h' as string]: `${(d.modulesCompleted / max) * 64}px`,
+                ['--bar-min' as string]: d.modulesCompleted > 0 ? '4px' : '0px',
+                ['--bar-bg' as string]: d.modulesCompleted > 0 ? 'var(--accent)' : 'var(--surface-2)',
+              } as React.CSSProperties} />
             <span className="text-[10px] text-[--ink-muted]">{labels[i]}</span>
           </div>
         ))}
@@ -309,8 +310,10 @@ export default function AccountPage({ account, profile, onBack, onLogout, onAcco
               <p className="text-[--ink-muted] mt-1">{earnedCount} van {badges.length} verdiend</p>
             </div>
             <div className="w-full bg-[--border] rounded-full h-2">
-              <div className="bg-[--accent] h-2 rounded-full transition-all"
-                style={{ width: `${(earnedCount / badges.length) * 100}%` }} />
+              <div
+                className="bg-[--accent] h-2 rounded-full transition-all [width:var(--progress-w)]"
+                /* eslint-disable-next-line react/forbid-component-props */
+                style={{ ['--progress-w' as string]: `${Math.round((earnedCount / badges.length) * 100)}%` } as React.CSSProperties} />
             </div>
             <BadgeGrid badges={badges} />
           </motion.div>

@@ -220,7 +220,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
                       ? 'border-[--accent] bg-[--accent-light]'
                       : 'border-[--border] bg-white hover:border-[--border-strong]'
                   )}>
-                  <div className={cn('w-5 h-5 rounded-full border-2 mt-0.5 flex-shrink-0',
+                  <div className={cn('w-5 h-5 rounded-full border-2 mt-0.5 shrink-0',
                     aiExp === opt.value ? 'border-[--accent] bg-[--accent]' : 'border-[--border-strong]')} />
                   <div>
                     <p className="font-bold text-[--ink]">{opt.label}</p>

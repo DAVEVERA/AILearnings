@@ -26,7 +26,7 @@ export default function VisualRenderer({ type, data }: VisualRendererProps) {
   switch (type) {
     case 'chart':
       return (
-        <div className="w-full h-full flex flex-col items-center justify-center p-6 bg-gray-50 rounded-[1.5rem] border border-gray-100">
+        <div className="w-full h-full flex flex-col items-center justify-center p-6 bg-gray-50 rounded-3xl border border-gray-100">
           <div className="w-full h-[300px]">
              <ResponsiveContainer width="100%" height="100%">
                <BarChart data={chartData}>
@@ -72,7 +72,7 @@ export default function VisualRenderer({ type, data }: VisualRendererProps) {
 
     case 'image':
       return (
-        <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-gray-50 rounded-[2rem] border border-gray-100 group">
+        <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-gray-50 rounded-4xl border border-gray-100 group">
           <img 
             src={`https://picsum.photos/seed/${data?.seed || 'ai-vision'}/1200/800`} 
             alt="Content"
@@ -85,7 +85,7 @@ export default function VisualRenderer({ type, data }: VisualRendererProps) {
     case 'video':
       const videoSrc = data?.videoUrl || 'https://assets.mixkit.co/videos/preview/mixkit-circuit-board-details-4432-large.mp4';
       return (
-        <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-black rounded-[2rem] group border border-gray-200">
+        <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-black rounded-4xl group border border-gray-200">
           <video 
             src={videoSrc}
             autoPlay
@@ -94,7 +94,7 @@ export default function VisualRenderer({ type, data }: VisualRendererProps) {
             playsInline
             className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-8">
+          <div className="absolute inset-0 bg-linear-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-8">
             <p className="text-white font-bold uppercase tracking-widest text-xs flex items-center gap-2">
               <VideoIcon size={14} fill="currentColor" /> Live Demonstratie
             </p>

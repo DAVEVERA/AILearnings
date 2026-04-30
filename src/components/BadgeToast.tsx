@@ -36,7 +36,7 @@ export default function BadgeToast({ newBadges, onDismiss }: Props) {
         className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50"
       >
         <div className="bg-[--ink] text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 min-w-[300px]">
-          <div className="w-12 h-12 rounded-xl bg-[--accent] flex items-center justify-center text-2xl flex-shrink-0">
+          <div className="w-12 h-12 rounded-xl bg-[--accent] flex items-center justify-center text-2xl shrink-0">
             {badge.icon}
           </div>
           <div>

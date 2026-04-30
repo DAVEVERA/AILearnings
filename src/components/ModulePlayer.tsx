@@ -59,7 +59,7 @@ export default function ModulePlayer({ module, onClose, onUpdateModule, onComple
   };
 
   return (
-    <div className="fixed inset-0 bg-white z-[100] flex flex-col font-sans overflow-hidden text-black selection:bg-black selection:text-white">
+    <div className="fixed inset-0 bg-white z-100 flex flex-col font-sans overflow-hidden text-black selection:bg-black selection:text-white">
       {/* Background Atmosphere - Simplified for light theme */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-0 right-0 w-[50vw] h-[50vw] bg-gray-50 blur-[120px] rounded-full translate-x-1/2 -translate-y-1/2" />
@@ -157,7 +157,7 @@ export default function ModulePlayer({ module, onClose, onUpdateModule, onComple
                     <h2 className="text-3xl font-bold font-display leading-tight uppercase tracking-tight">{module.learningContent[currentContentIndex].sectionTitle}</h2>
                   </div>
                   
-                  <div className="p-8 bg-gray-50 border-l-[4px] border-black rounded-r-xl shadow-sm">
+                  <div className="p-8 bg-gray-50 border-l-4 border-black rounded-r-xl shadow-sm">
                     <p className="text-gray-700 leading-relaxed text-xl italic">{module.learningContent[currentContentIndex].text}</p>
                   </div>
                   
@@ -225,7 +225,7 @@ export default function ModulePlayer({ module, onClose, onUpdateModule, onComple
               <div className="max-w-xl mx-auto text-center space-y-12 py-24">
                 <div className="relative inline-block">
                   <div className="absolute inset-0 bg-gray-100 blur-[80px] rounded-full scale-150 animate-pulse" />
-                  <div className="w-48 h-48 border-[8px] border-black rounded-[2.5rem] flex items-center justify-center mx-auto shadow-2xl relative z-10 bg-white">
+                  <div className="w-48 h-48 border-8 border-black rounded-[2.5rem] flex items-center justify-center mx-auto shadow-2xl relative z-10 bg-white">
                     <Award size={80} className="text-black" strokeWidth={1.5} />
                   </div>
                 </div>
@@ -260,7 +260,12 @@ export default function ModulePlayer({ module, onClose, onUpdateModule, onComple
                   <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
                   <h3 className="font-bold text-black uppercase tracking-widest text-xs">Analytics & Export</h3>
                 </div>
-                <button onClick={() => setShowReviewSidebar(false)} className="text-gray-300 hover:text-black transition-colors">
+                <button
+                  onClick={() => setShowReviewSidebar(false)}
+                  aria-label="Sluit zijpaneel"
+                  title="Sluit zijpaneel"
+                  className="text-gray-300 hover:text-black transition-colors"
+                >
                   <X size={24} />
                 </button>
               </div>
