@@ -181,8 +181,8 @@ export default function AccountPage({ account, profile, onBack, onLogout, onAcco
     setTimeout(() => setNameMsg(''), 3000);
   };
 
-  const handleChangePw = () => {
-    const result = changePassword(oldPw, newPw);
+  const handleChangePw = async () => {
+    const result = await changePassword(oldPw, newPw);
     if (isAuthError(result)) {
       setPwMsg(result.error);
     } else {
@@ -192,9 +192,9 @@ export default function AccountPage({ account, profile, onBack, onLogout, onAcco
     setTimeout(() => setPwMsg(''), 4000);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (confirm('Account definitief verwijderen? Al je voortgang en badges gaan verloren.')) {
-      deleteAccount();
+      await deleteAccount();
       onLogout();
     }
   };

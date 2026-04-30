@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { LearnerProfile, ModuleContent, DifficultyLevel, DEPARTMENTS, UserAccount, BadgeId } from './types';
 import { generateModule } from './services/geminiService';
-import { saveProfileToAccount, getActiveAccount, logout as authLogout } from './services/authService';
-import { markModuleStarted, markModuleComplete } from './services/progressService';
-import { evaluateBadges } from './services/badgeService';
+import { saveProfileToAccount, getActiveAccount, logout as authLogout, loadProfile } from './services/authService';
+import { markModuleStarted, markModuleComplete, syncProgressFromSupabase } from './services/progressService';
+import { evaluateBadges, syncBadgesFromSupabase } from './services/badgeService';
+import { supabase } from './lib/supabase';
 import { AnimatePresence, motion } from 'motion/react';
 import { Loader2 } from 'lucide-react';
 import AuthFlow from './components/AuthFlow';
@@ -36,16 +37,54 @@ export default function App() {
   const [loadStep, setLoadStep] = useState(0);
   const [newBadges, setNewBadges] = useState<BadgeId[]>([]);
 
-  // Boot: check for existing session
+  // ── Boot: Supabase auth session listener ──────────────────────────────────────
   useEffect(() => {
-    const acc = getActiveAccount();
-    if (acc) {
-      setAccount(acc);
-      setProfile(acc.profile ?? null);
-      setView(acc.profile ? 'dashboard' : 'onboarding');
-    } else {
-      setView('auth');
-    }
+    let mounted = true;
+
+    // Check existing session on mount
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!mounted) return;
+      if (session?.user) {
+        const acc = await getActiveAccount();
+        if (!acc) { setView('auth'); return; }
+        setAccount(acc);
+        // Sync remote data then load profile
+        await Promise.all([syncProgressFromSupabase(), syncBadgesFromSupabase()]);
+        const p = await loadProfile();
+        if (mounted) {
+          setProfile(p);
+          setView(p ? 'dashboard' : 'onboarding');
+        }
+      } else {
+        if (mounted) setView('auth');
+      }
+    });
+
+    // Listen for auth changes (login / logout / token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+      if (event === 'SIGNED_OUT') {
+        setAccount(null);
+        setProfile(null);
+        setActiveModule(null);
+        setView('auth');
+      } else if (event === 'SIGNED_IN' && session?.user) {
+        const acc = await getActiveAccount();
+        if (!acc) return;
+        setAccount(acc);
+        await Promise.all([syncProgressFromSupabase(), syncBadgesFromSupabase()]);
+        const p = await loadProfile();
+        if (mounted) {
+          setProfile(p);
+          setView(p ? 'dashboard' : 'onboarding');
+        }
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Loading message animation
@@ -58,16 +97,15 @@ export default function App() {
     return () => clearInterval(iv);
   }, [generating]);
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
+  // ── Handlers ─────────────────────────────────────────────────────────────────
 
   const handleAuthSuccess = (acc: UserAccount) => {
     setAccount(acc);
-    setProfile(acc.profile ?? null);
-    setView(acc.profile ? 'dashboard' : 'onboarding');
+    // Profile will be loaded by onAuthStateChange
   };
 
-  const handleOnboardingComplete = (newProfile: LearnerProfile) => {
-    saveProfileToAccount(newProfile);
+  const handleOnboardingComplete = async (newProfile: LearnerProfile) => {
+    await saveProfileToAccount(newProfile);
     setProfile(newProfile);
     setView('dashboard');
   };
@@ -83,7 +121,7 @@ export default function App() {
     setView('module');
     try {
       const mod = await generateModule(dept.name, deptId, level, index, profile);
-      markModuleStarted(moduleId, deptId, level, index);
+      await markModuleStarted(moduleId, deptId, level, index);
       setActiveModule(mod);
     } catch (err) {
       console.error('Module generation failed:', err);
@@ -94,9 +132,9 @@ export default function App() {
     }
   };
 
-  const handleModuleComplete = (score: number, maxScore: number, timeSeconds: number, answers: number[]) => {
+  const handleModuleComplete = async (score: number, maxScore: number, timeSeconds: number, answers: number[]) => {
     if (activeModule && activeMeta) {
-      markModuleComplete(
+      await markModuleComplete(
         activeModule.id,
         activeMeta.deptId,
         activeMeta.level,
@@ -106,7 +144,6 @@ export default function App() {
         timeSeconds,
         answers
       );
-      // Evaluate badges
       const earned = evaluateBadges();
       if (earned.length > 0) setNewBadges(earned);
     }
@@ -115,12 +152,9 @@ export default function App() {
     setView('dashboard');
   };
 
-  const handleLogout = () => {
-    authLogout();
-    setAccount(null);
-    setProfile(null);
-    setActiveModule(null);
-    setView('auth');
+  const handleLogout = async () => {
+    await authLogout();
+    // onAuthStateChange will handle state reset
   };
 
   const handleAccountUpdated = (updated: UserAccount) => {

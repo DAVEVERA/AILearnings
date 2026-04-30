@@ -22,10 +22,9 @@ export default function AuthFlow({ onSuccess }: Props) {
     e.preventDefault();
     setError('');
     setLoading(true);
-    await new Promise(r => setTimeout(r, 400)); // subtle delay for UX
     const result = mode === 'register'
-      ? register(email, password, name)
-      : login(email, password);
+      ? await register(email, password, name)
+      : await login(email, password);
     setLoading(false);
     if (isAuthError(result)) {
       setError(result.error);

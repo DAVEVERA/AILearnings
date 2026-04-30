@@ -1,56 +1,103 @@
 /**
- * progressService.ts
- * Tracks per-account module progress, time spent, answers, and streaks.
+ * progressService.ts — Supabase backend
+ * Slaat module-voortgang, tijdmeting en antwoorden op in Supabase.
+ * Valt terug op localStorage voor offline gebruik.
  */
-import { ModuleProgress, DifficultyLevel, LearnerStats } from '../types';
-import { getSession } from './authService';
+import { supabase } from '../lib/supabase';
+import { ModuleProgress, LearnerStats, DifficultyLevel } from '../types';
 
-function progressKey(): string {
-  return `ail_progress_${getSession() ?? 'anon'}`;
+// ─── Local cache key (offline fallback) ───────────────────────────────────────
+const LOCAL_KEY = 'ail_progress_cache';
+
+function loadLocalCache(): Record<string, ModuleProgress> {
+  try { return JSON.parse(localStorage.getItem(LOCAL_KEY) ?? '{}'); } catch { return {}; }
 }
+function saveLocalCache(data: Record<string, ModuleProgress>): void {
+  localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+}
+
+// ─── Load progress (merged: Supabase + local cache) ───────────────────────────
 
 export function loadProgress(): Record<string, ModuleProgress> {
-  try {
-    return JSON.parse(localStorage.getItem(progressKey()) ?? '{}');
-  } catch {
-    return {};
+  return loadLocalCache();
+}
+
+export async function syncProgressFromSupabase(): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const { data, error } = await supabase
+    .from('module_progress')
+    .select('*')
+    .eq('user_id', user.id);
+  if (error || !data) return;
+
+  const cache: Record<string, ModuleProgress> = {};
+  for (const row of data) {
+    cache[row.module_id] = {
+      moduleId: row.module_id,
+      departmentId: row.department_id,
+      level: row.level as DifficultyLevel,
+      moduleIndex: row.module_index,
+      completed: row.completed,
+      score: row.score ?? undefined,
+      maxScore: row.max_score ?? undefined,
+      timeSpentSeconds: row.time_spent_seconds ?? undefined,
+      startedAt: row.started_at ?? undefined,
+      completedAt: row.completed_at ?? undefined,
+      attempts: row.attempts,
+      answers: row.answers ?? undefined,
+    };
   }
+  saveLocalCache(cache);
 }
 
-function saveProgress(data: Record<string, ModuleProgress>): void {
-  localStorage.setItem(progressKey(), JSON.stringify(data));
-}
+// ─── Mark started ─────────────────────────────────────────────────────────────
 
-// ─── Module Start ─────────────────────────────────────────────────────────────
-
-export function markModuleStarted(
+export async function markModuleStarted(
   moduleId: string,
   departmentId: string,
   level: DifficultyLevel,
-  moduleIndex: number
-): void {
-  const data = loadProgress();
-  const existing = data[moduleId];
-  data[moduleId] = {
+  moduleIndex: number,
+): Promise<void> {
+  const cache = loadLocalCache();
+  const existing = cache[moduleId];
+  const now = new Date().toISOString();
+
+  const updated: ModuleProgress = {
     moduleId,
     departmentId,
     level,
     moduleIndex,
     completed: existing?.completed ?? false,
+    startedAt: existing?.startedAt ?? now,
+    attempts: (existing?.attempts ?? 0) + 1,
     score: existing?.score,
     maxScore: existing?.maxScore,
-    timeSpentSeconds: existing?.timeSpentSeconds ?? 0,
-    startedAt: existing?.startedAt ?? new Date().toISOString(),
+    timeSpentSeconds: existing?.timeSpentSeconds,
     completedAt: existing?.completedAt,
-    attempts: (existing?.attempts ?? 0) + 1,
     answers: existing?.answers,
   };
-  saveProgress(data);
+  cache[moduleId] = updated;
+  saveLocalCache(cache);
+
+  // Sync to Supabase
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase.from('module_progress').upsert({
+    user_id: user.id,
+    module_id: moduleId,
+    department_id: departmentId,
+    level,
+    module_index: moduleIndex,
+    completed: updated.completed,
+    started_at: updated.startedAt,
+    attempts: updated.attempts,
+  }, { onConflict: 'user_id,module_id' });
 }
 
-// ─── Module Complete ──────────────────────────────────────────────────────────
+// ─── Mark complete ────────────────────────────────────────────────────────────
 
-export function markModuleComplete(
+export async function markModuleComplete(
   moduleId: string,
   departmentId: string,
   level: DifficultyLevel,
@@ -58,11 +105,19 @@ export function markModuleComplete(
   score: number,
   maxScore: number,
   timeSpentSeconds: number,
-  answers?: number[]
-): void {
-  const data = loadProgress();
-  const existing = data[moduleId];
-  data[moduleId] = {
+  answers: number[],
+): Promise<void> {
+  const cache = loadLocalCache();
+  const existing = cache[moduleId];
+  const now = new Date().toISOString();
+
+  // Record daily activity
+  const today = new Date().toISOString().split('T')[0];
+  const activityKey = `ail_activity_${today}`;
+  const prev = parseInt(localStorage.getItem(activityKey) ?? '0', 10);
+  localStorage.setItem(activityKey, String(prev + 1));
+
+  const updated: ModuleProgress = {
     moduleId,
     departmentId,
     level,
@@ -70,133 +125,135 @@ export function markModuleComplete(
     completed: true,
     score,
     maxScore,
-    timeSpentSeconds: (existing?.timeSpentSeconds ?? 0) + timeSpentSeconds,
-    startedAt: existing?.startedAt ?? new Date().toISOString(),
-    completedAt: new Date().toISOString(),
+    timeSpentSeconds,
+    startedAt: existing?.startedAt ?? now,
+    completedAt: now,
     attempts: existing?.attempts ?? 1,
-    answers: answers ?? existing?.answers,
+    answers,
   };
-  saveProgress(data);
-  recordActivityToday();
+  cache[moduleId] = updated;
+  saveLocalCache(cache);
+
+  // Sync to Supabase
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase.from('module_progress').upsert({
+    user_id: user.id,
+    module_id: moduleId,
+    department_id: departmentId,
+    level,
+    module_index: moduleIndex,
+    completed: true,
+    score,
+    max_score: maxScore,
+    time_spent_seconds: timeSpentSeconds,
+    started_at: existing?.startedAt ?? now,
+    completed_at: now,
+    attempts: existing?.attempts ?? 1,
+    answers,
+  }, { onConflict: 'user_id,module_id' });
 }
 
-// ─── Activity / Streak tracking ───────────────────────────────────────────────
-
-const ACTIVITY_KEY = () => `ail_activity_${getSession() ?? 'anon'}`;
-
-function recordActivityToday(): void {
-  const today = new Date().toISOString().split('T')[0];
-  const raw = localStorage.getItem(ACTIVITY_KEY()) ?? '{}';
-  const data: Record<string, number> = JSON.parse(raw);
-  data[today] = (data[today] ?? 0) + 1;
-  localStorage.setItem(ACTIVITY_KEY(), JSON.stringify(data));
-}
+// ─── Activity heatmap ─────────────────────────────────────────────────────────
 
 export function getActivityData(): Record<string, number> {
-  try {
-    return JSON.parse(localStorage.getItem(ACTIVITY_KEY()) ?? '{}');
-  } catch {
-    return {};
-  }
-}
-
-function computeStreak(): number {
-  const activity = getActivityData();
-  const dates = Object.keys(activity).sort().reverse();
-  if (!dates.length) return 0;
-  let streak = 0;
-  const today = new Date();
-  for (let i = 0; i < 365; i++) {
-    const d = new Date(today);
+  const result: Record<string, number> = {};
+  for (let i = 0; i < 28; i++) {
+    const d = new Date();
     d.setDate(d.getDate() - i);
     const key = d.toISOString().split('T')[0];
-    if (activity[key]) {
-      streak++;
-    } else if (i > 0) {
-      break;
-    }
+    const val = parseInt(localStorage.getItem(`ail_activity_${key}`) ?? '0', 10);
+    if (val > 0) result[key] = val;
   }
-  return streak;
+  return result;
 }
 
-// ─── Stats computation ────────────────────────────────────────────────────────
-
-export function computeStats(): LearnerStats {
-  const progress = loadProgress();
-  const all = Object.values(progress);
-  const completed = all.filter(p => p.completed);
-
-  const totalTimeSeconds = completed.reduce((s, p) => s + (p.timeSpentSeconds ?? 0), 0);
-  const scores = completed.filter(p => p.score !== undefined && p.maxScore !== undefined)
-    .map(p => (p.score! / p.maxScore!) * 100);
-  const averageScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-  const bestScore = scores.length ? Math.round(Math.max(...scores)) : 0;
-
-  const modulesByDept: Record<string, number> = {};
-  const modulesByLevel: Record<string, number> = { beginner: 0, gemiddeld: 0, gevorderd: 0 };
-  completed.forEach(p => {
-    modulesByDept[p.departmentId] = (modulesByDept[p.departmentId] ?? 0) + 1;
-    modulesByLevel[p.level] = (modulesByLevel[p.level] ?? 0) + 1;
-  });
-
-  // Recent activity (last 7 days)
-  const activityData = getActivityData();
-  const recentActivity = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    const key = d.toISOString().split('T')[0];
-    return { date: key, modulesCompleted: activityData[key] ?? 0 };
-  });
-
-  // Weak/strong areas (score < 60% = weak, > 85% = strong)
-  const areaScores: Record<string, number[]> = {};
-  completed.forEach(p => {
-    if (p.score === undefined || p.maxScore === undefined) return;
-    const key = `${p.departmentId}-${p.level}`;
-    areaScores[key] = [...(areaScores[key] ?? []), (p.score / p.maxScore) * 100];
-  });
-  const weakAreas: string[] = [];
-  const strongAreas: string[] = [];
-  Object.entries(areaScores).forEach(([key, arr]) => {
-    const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
-    if (avg < 60) weakAreas.push(key);
-    else if (avg > 85) strongAreas.push(key);
-  });
-
-  return {
-    totalModulesCompleted: completed.length,
-    totalTimeSeconds,
-    averageScore,
-    bestScore,
-    currentStreak: computeStreak(),
-    totalAttempts: all.reduce((s, p) => s + p.attempts, 0),
-    modulesByDept,
-    modulesByLevel: modulesByLevel as any,
-    recentActivity,
-    weakAreas,
-    strongAreas,
-  };
-}
-
-// ─── Convenience ─────────────────────────────────────────────────────────────
+// ─── Level progress helper ────────────────────────────────────────────────────
 
 export function getLevelProgress(
-  deptId: string,
+  departmentId: string,
   level: DifficultyLevel,
-  total = 10
+  total = 10,
 ): { completed: number; percentage: number } {
-  const data = loadProgress();
-  const completed = Object.values(data).filter(
-    p => p.departmentId === deptId && p.level === level && p.completed
+  const cache = loadLocalCache();
+  const completed = Object.values(cache).filter(
+    p => p.departmentId === departmentId && p.level === level && p.completed,
   ).length;
   return { completed, percentage: Math.round((completed / total) * 100) };
 }
 
 export function getTotalCompleted(): number {
-  return Object.values(loadProgress()).filter(p => p.completed).length;
+  return Object.values(loadLocalCache()).filter(p => p.completed).length;
 }
 
-export function clearProgressForAccount(): void {
-  localStorage.removeItem(progressKey());
-  localStorage.removeItem(ACTIVITY_KEY());
+// ─── Statistics ───────────────────────────────────────────────────────────────
+
+export function computeStats(): LearnerStats {
+  const all = Object.values(loadLocalCache());
+  const completed = all.filter(p => p.completed);
+
+  const totalModulesCompleted = completed.length;
+  const totalTimeSeconds = completed.reduce((s, p) => s + (p.timeSpentSeconds ?? 0), 0);
+  const totalAttempts = all.reduce((s, p) => s + p.attempts, 0);
+
+  const scores = completed.filter(p => p.score !== undefined && p.maxScore);
+  const averageScore = scores.length
+    ? Math.round(scores.reduce((s, p) => s + (p.score! / p.maxScore!) * 100, 0) / scores.length)
+    : 0;
+  const bestScore = scores.length
+    ? Math.round(Math.max(...scores.map(p => (p.score! / p.maxScore!) * 100)))
+    : 0;
+
+  // Streak calculation
+  let currentStreak = 0;
+  const activity = getActivityData();
+  for (let i = 0; i < 30; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().split('T')[0];
+    if ((activity[key] ?? 0) > 0) { currentStreak++; } else if (i > 0) break;
+  }
+
+  // Modules per dept/level
+  const modulesByDept: Record<string, number> = {};
+  const modulesByLevel: Record<DifficultyLevel, number> = { beginner: 0, gemiddeld: 0, gevorderd: 0 };
+  for (const p of completed) {
+    modulesByDept[p.departmentId] = (modulesByDept[p.departmentId] ?? 0) + 1;
+    modulesByLevel[p.level]++;
+  }
+
+  // Recent activity (last 7 days)
+  const recentActivity = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const date = d.toISOString().split('T')[0];
+    return { date, modulesCompleted: activity[date] ?? 0 };
+  });
+
+  // Weak / strong area analysis
+  const areaScores: Record<string, number[]> = {};
+  for (const p of scores) {
+    const key = `${p.departmentId}-${p.level}`;
+    (areaScores[key] ??= []).push((p.score! / p.maxScore!) * 100);
+  }
+  const areaAvgs = Object.entries(areaScores).map(([k, v]) => ({
+    key: k,
+    avg: v.reduce((a, b) => a + b, 0) / v.length,
+  }));
+  const weakAreas   = areaAvgs.filter(a => a.avg < 60).map(a => a.key);
+  const strongAreas = areaAvgs.filter(a => a.avg >= 85).map(a => a.key);
+
+  return {
+    totalModulesCompleted,
+    totalTimeSeconds,
+    averageScore,
+    bestScore,
+    currentStreak,
+    totalAttempts,
+    modulesByDept,
+    modulesByLevel,
+    recentActivity,
+    weakAreas,
+    strongAreas,
+  };
 }
